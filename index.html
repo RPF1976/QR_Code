@@ -8,8 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-<script src="https://unpkg.com/lucide@latest"></script>
+<script src="./qrcode.bundle.js"></script>
 <style>
 :root{
   --bg:#f8fafc;
@@ -943,6 +942,11 @@ async function render(payload){
 
   const opts = getQrOptions(size);
   // qrcode lib expects width
+  if(typeof QRCode === 'undefined'){
+    console.error('QRCode lib não carregou');
+    toast('Erro: biblioteca QR não carregou. Recarregue a página.');
+    return;
+  }
   try{
     await new Promise((res, rej)=>{
       QRCode.toCanvas(els.qrCanvas, payload, opts, (err)=>{
@@ -952,18 +956,26 @@ async function render(payload){
     // also draw mini preview (static-like but sync with payload for hero)
     await drawMini(payload);
   }catch(e){
-    console.error(e);
-    toast('Texto muito longo para esse nível de correção. Tente Q ou M.');
+    console.error('QR render error:', e);
+    const msg = (e && e.message) ? e.message : String(e);
+    if(msg.includes('too big') || msg.includes('data is too')){
+      if(state.ec === 'H') toast('Texto muito longo para H (alta correção). Mude para M ou L que cabe mais texto.');
+      else if(state.ec === 'Q') toast('Texto muito longo. Tente M ou L para caber mais caracteres.');
+      else toast('Texto muito longo até para L. Reduza o texto ou divida em partes.');
+    } else {
+      toast('Erro ao gerar: ' + msg);
+    }
   }
 }
 
 async function drawMini(payload){
+  if(typeof QRCode === 'undefined') return;
   const opts = { errorCorrectionLevel:'M', margin:1, width:72, color:{dark:'#0f172a', light:'#ffffff'} };
   try{
     await new Promise((res,rej)=>{
       QRCode.toCanvas(els.miniQr, payload, opts, (err)=> err?rej(err):res());
     });
-  }catch{}
+  }catch(e){ console.warn('mini error', e); }
 }
 
 function scheduleRender(){
