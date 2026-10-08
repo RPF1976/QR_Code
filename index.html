@@ -241,8 +241,9 @@ input[type="range"]{flex:1; accent-color:#7c3aed}
 }
 .qr-corner-tr{top:-2px; right:-2px; border-left:0; border-bottom:0}
 .qr-corner-bl{bottom:-2px; left:-2px; border-right:0; border-top:0}
-#qrCanvas{ display:block; width:270px; height:270px; border-radius:12px; image-rendering: pixelated; }
-@media(max-width:400px){#qrCanvas{width:240px;height:240px}}
+/* Prévia travada em 1/4 (135px): !important vence o style inline que a lib qrcode aplica a cada render */
+#qrCanvas{ display:block; width:135px !important; height:135px !important; border-radius:12px; image-rendering: pixelated; }
+@media(max-width:400px){#qrCanvas{width:135px !important;height:135px !important}}
 .empty{
   text-align:center; padding:28px 18px; max-width:320px;
 }
@@ -690,6 +691,7 @@ input[type="range"]{flex:1; accent-color:#7c3aed}
 <footer class="footer">
   <div class="footer-inner">
     <span>© <span id="year"></span> QR Fácil — feito para funcionar rápido, privado e gratuito.</span>
+    <span>Desenvolvido por <strong>Rodrigo Pinto Fernandes</strong></span>
     <span>Sem rastreio • Geração 100% no navegador • <a href="#" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">voltar ao topo ↑</a></span>
   </div>
 </footer>
@@ -937,8 +939,8 @@ async function render(payload){
   // ensure canvas size attributes match desired
   els.qrCanvas.width = size;
   els.qrCanvas.height = size;
-  els.qrCanvas.style.width = '270px';
-  els.qrCanvas.style.height = '270px';
+  els.qrCanvas.style.width = '135px';
+  els.qrCanvas.style.height = '135px';
 
   const opts = getQrOptions(size);
   // qrcode lib expects width
@@ -953,6 +955,10 @@ async function render(payload){
         if(err) rej(err); else res();
       });
     });
+    // trava a prévia: a lib qrcode reescreve style.width/height com o tamanho
+    // de exportação a cada render — reaplica 135px para não crescer ao digitar
+    els.qrCanvas.style.width = '135px';
+    els.qrCanvas.style.height = '135px';
     // also draw mini preview (static-like but sync with payload for hero)
     await drawMini(payload);
   }catch(e){
