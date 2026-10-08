@@ -2,7 +2,7 @@ name: Deploy QR Fácil para GitHub Pages
 
 on:
   push:
-    branches: ["arena/0da44d23-qr-code", "main"]
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +25,10 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          # recria o site Pages automaticamente se ele tiver sido desativado
+          # (sem isso, o passo falha com 404 quando o site não existe)
+          enablement: true
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
