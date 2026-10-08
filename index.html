@@ -995,7 +995,9 @@ els.tabs.forEach(t=>{
     const tab = t.dataset.tab;
     state.tab = tab;
     els.tabs.forEach(x=> x.classList.toggle('active', x===t));
-    els.panels.forEach(p=> p.style.display = p.dataset.panel===tab ? '' : 'none');
+    // Os painéis não textuais têm a classe .exclusive (display:none); use display:block
+    // explicitamente para que o estilo inline mostre a aba selecionada.
+    els.panels.forEach(p=> p.style.display = p.dataset.panel===tab ? 'block' : 'none');
     // show/hide exclusive helper: we use style.display toggle already; keep exclusive class for future
     scheduleRender();
   });
