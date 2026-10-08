@@ -23,12 +23,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Pré-requisito (uma única vez, manual — nenhum token de workflow consegue
+      # fazer isso via API): no repositório, Settings → Pages → Build and
+      # deployment → Source: "GitHub Actions". Sem isso, este passo falha com
+      # 404 ("Not Found"); 'enablement: true' também não resolve, pois criar o
+      # site Pages exige permissão de administração do repositório, que o
+      # GITHUB_TOKEN não tem nem pode receber.
       - name: Setup Pages
         uses: actions/configure-pages@v5
-        with:
-          # recria o site Pages automaticamente se ele tiver sido desativado
-          # (sem isso, o passo falha com 404 quando o site não existe)
-          enablement: true
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
