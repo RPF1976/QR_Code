@@ -485,9 +485,16 @@ input[type="range"]{flex:1; accent-color:#7c3aed}
       <div class="field exclusive" data-panel="pix">
         <div class="pix-grid">
           <div>
+            <div class="label"><span>Tipo da chave</span></div>
+            <select id="pixKeyType" class="select">
+              <option value="other">CPF/CNPJ, e-mail ou aleatória</option>
+              <option value="phone">Telefone brasileiro</option>
+            </select>
+          </div>
+          <div>
             <div class="label"><span>Chave Pix</span></div>
-            <input id="pixKey" class="input" placeholder="CPF, telefone, e-mail ou aleatória">
-            <div class="help">Ex: 11999998888 ou seu@email.com</div>
+            <input id="pixKey" class="input" placeholder="Digite a chave cadastrada no Pix" autocomplete="off">
+            <div class="help">Para telefone, selecione “Telefone brasileiro” e informe DDD + número, com ou sem +55.</div>
           </div>
           <div>
             <div class="label"><span>Nome do recebedor</span></div>
@@ -503,10 +510,11 @@ input[type="range"]{flex:1; accent-color:#7c3aed}
           </div>
         </div>
         <div style="margin-top:12px">
-          <div class="label"><span>Mensagem / Identificador (opcional)</span></div>
-          <input id="pixTxid" class="input" placeholder="Pedido 123" maxlength="25">
+          <div class="label"><span>Identificador da transação (opcional)</span></div>
+          <input id="pixTxid" class="input" placeholder="PEDIDO123" maxlength="25">
+          <div class="help">Use somente letras e números, até 25 caracteres. Deixe em branco se não precisar.</div>
         </div>
-        <div class="help">Geramos o <b>BR Code</b> no padrão do Banco Central. Qualquer banco lê por PIX Copia e Cola.</div>
+        <div class="help">Geramos um QR Pix estático no padrão do Banco Central. A chave precisa estar ativa no DICT; o exemplo é fictício e não recebe pagamentos.</div>
       </div>
 
       <!-- EMAIL -->
@@ -724,6 +732,7 @@ const els = {
   wifiPass: $('#wifiPass'),
   wifiAuth: $('#wifiAuth'),
   wifiHidden: $('#wifiHidden'),
+  pixKeyType: $('#pixKeyType'),
   pixKey: $('#pixKey'),
   pixName: $('#pixName'),
   pixCity: $('#pixCity'),
@@ -780,6 +789,27 @@ function normalizeLink(v){
   if(/^[\w-]+\.[\w.-]+/.test(v)) return 'https://' + v;
   return v;
 }
+function normalizePixKey(value, type){
+  const key = value.trim();
+  if(!key) return '';
+  if(type === 'phone'){
+    const digits = key.replace(/\D/g, '');
+    const nationalNumber = digits.startsWith('55') && (digits.length === 12 || digits.length === 13)
+      ? digits.slice(2)
+      : digits;
+    if(!/^\d{10,11}$/.test(nationalNumber)) return '';
+    return '+55' + nationalNumber;
+  }
+  if(key.startsWith('+55')){
+    const digits = key.replace(/\D/g, '');
+    if(digits.length === 12 || digits.length === 13) return '+' + digits;
+  }
+  const formattedDocument = key.replace(/[.\-\/\s]/g, '');
+  if(/^\d{11}$/.test(formattedDocument) || /^\d{14}$/.test(formattedDocument)){
+    return formattedDocument;
+  }
+  return key;
+}
 function buildPayload(){
   const tab = state.tab;
   if(tab==='texto'){
@@ -811,12 +841,14 @@ function buildPayload(){
     return `WIFI:T:${auth};S:${esc(ssid)};P:${esc(pass)};H:${hidden};;`;
   }
   if(tab==='pix'){
-    const key = els.pixKey.value.trim();
+    const key = normalizePixKey(els.pixKey.value, els.pixKeyType.value);
     const name = els.pixName.value.trim();
     const city = els.pixCity.value.trim();
     if(!key || !name || !city) return '';
     const amount = els.pixAmount.value.replace(',', '.').trim();
-    const txid = (els.pixTxid.value.trim() || '***').toUpperCase().slice(0,25);
+    const rawTxid = els.pixTxid.value.trim();
+    if(rawTxid && !/^[A-Za-z0-9]{1,25}$/.test(rawTxid)) return '';
+    const txid = rawTxid ? rawTxid.toUpperCase() : '***';
     try{
       return buildPixPayload({key, name, city, amount, txid});
     }catch(e){
@@ -838,11 +870,12 @@ function buildPayload(){
   return '';
 }
 
-// PIX BR Code (EMV) — simplified CRC16 CCITT
+// PIX BR Code (EMV): CRC-16/CCITT-FALSE e comprimentos em bytes UTF-8.
 function crc16(str){
   let crc = 0xFFFF;
-  for(let i=0;i<str.length;i++){
-    crc ^= str.charCodeAt(i) << 8;
+  const bytes = new TextEncoder().encode(str);
+  for(const byte of bytes){
+    crc ^= byte << 8;
     for(let j=0;j<8;j++){
       crc = (crc & 0x8000) ? ((crc<<1) ^ 0x1021) : (crc<<1);
       crc &= 0xFFFF;
@@ -852,20 +885,24 @@ function crc16(str){
 }
 function emv(id, value){
   const v = String(value);
-  return id + String(v.length).padStart(2,'0') + v;
+  const length = new TextEncoder().encode(v).length;
+  if(length > 99) throw new Error('Campo BR Code excede 99 bytes.');
+  return id + String(length).padStart(2,'0') + v;
 }
 function buildPixPayload({key, name, city, amount, txid}){
-  // Normaliza
-  name = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().slice(0,25) || 'RECEBEDOR';
+  name = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').slice(0,25) || 'RECEBEDOR';
   city = city.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().slice(0,15) || 'CIDADE';
   const gui = emv('00','br.gov.bcb.pix');
   const keyField = emv('01', key);
   const merchantAccount = emv('26', gui + keyField);
-  // Se quiser descrição, poderia adicionar 02, mas mantemos simples
+  const referenceLabel = txid || '***';
+  if(referenceLabel !== '***' && !/^[A-Za-z0-9]{1,25}$/.test(referenceLabel)){
+    throw new Error('O identificador Pix aceita somente letras e números (até 25 caracteres).');
+  }
 
+  // O campo 01 é opcional; QR estático segue o exemplo do Manual do Pix do BCB sem esse campo.
   let payload =
     emv('00','01') +
-    emv('01','11') +
     merchantAccount +
     emv('52','0000') +
     emv('53','986') +
@@ -873,7 +910,7 @@ function buildPixPayload({key, name, city, amount, txid}){
     emv('58','BR') +
     emv('59', name) +
     emv('60', city) +
-    emv('62', emv('05', txid || '***'));
+    emv('62', emv('05', referenceLabel));
 
   payload += '6304';
   payload += crc16(payload);
@@ -1007,7 +1044,7 @@ els.tabs.forEach(t=>{
 [
   els.inputTexto, els.inputLink, els.chkUtm, els.waNum, els.waMsg,
   els.wifiSsid, els.wifiPass, els.wifiAuth, els.wifiHidden,
-  els.pixKey, els.pixName, els.pixCity, els.pixAmount, els.pixTxid,
+  els.pixKeyType, els.pixKey, els.pixName, els.pixCity, els.pixAmount, els.pixTxid,
   els.emailTo, els.emailSubject, els.emailBody
 ].forEach(el=> {
   if(!el) return;
@@ -1075,16 +1112,21 @@ $('#btnExample').addEventListener('click', ()=>{
   } else if(state.tab==='wifi'){
     els.wifiSsid.value='Padaria_SaoPaulo_5G'; els.wifiPass.value='cafe1234'; els.wifiAuth.value='WPA';
   } else if(state.tab==='pix'){
-    els.pixKey.value='11999998888'; els.pixName.value='MARIA SILVA'; els.pixCity.value='SAO PAULO'; els.pixAmount.value='19,90'; els.pixTxid.value='PEDIDO123';
+    els.pixKeyType.value='other';
+    els.pixKey.value='123e4567-e12b-12d1-a456-426655440000';
+    els.pixName.value='Fulano de Tal'; els.pixCity.value='BRASILIA';
+    els.pixAmount.value=''; els.pixTxid.value='';
   } else if(state.tab==='email'){
     els.emailTo.value='contato@padariasp.com.br'; els.emailSubject.value='Quero fazer uma encomenda'; els.emailBody.value='Olá! Gostaria de encomendar 2 bolos para amanhã. Poderia me enviar o cardápio?';
   }
   scheduleRender();
-  toast('Exemplo preenchido — já pode baixar!');
+  toast(state.tab==='pix'
+    ? 'Exemplo do BCB: chave fictícia, não permite pagamento.'
+    : 'Exemplo preenchido — já pode baixar!');
 });
 $('#btnClear').addEventListener('click', ()=>{
   els.inputTexto.value=''; els.inputLink.value=''; els.waNum.value=''; els.waMsg.value='';
-  els.wifiSsid.value=''; els.wifiPass.value=''; els.pixKey.value=''; els.pixName.value=''; els.pixCity.value=''; els.pixAmount.value=''; els.pixTxid.value='';
+  els.wifiSsid.value=''; els.wifiPass.value=''; els.pixKeyType.value='other'; els.pixKey.value=''; els.pixName.value=''; els.pixCity.value=''; els.pixAmount.value=''; els.pixTxid.value='';
   els.emailTo.value=''; els.emailSubject.value=''; els.emailBody.value='';
   scheduleRender();
 });
